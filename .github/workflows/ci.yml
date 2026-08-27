@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  policy:
+    uses: nivuus/.github/.github/workflows/policy.yml@main
+  security:
+    uses: nivuus/.github/.github/workflows/security.yml@main
+  node:
+    uses: nivuus/.github/.github/workflows/ci-node.yml@main
+    with:
+      working-directory: frontend
+  python:
+    uses: nivuus/.github/.github/workflows/ci-python.yml@main
+    with:
+      # No tests/ directory exists yet: custom_components/docker_marketplace
+      # is a Home Assistant integration with no pytest suite. test-paths
+      # points at the conventional "tests" location anyway; ci-python.yml
+      # treats "no tests collected" (pytest exit 5) as success.
+      test-paths: tests

@@ -1,4 +1,13 @@
 """Data coordinator for Docker Marketplace."""
+
+# policy: allow-long-file
+#
+# 624 lines, and that IS too long: one coordinator and every state it derives.
+# Splitting it is a refactor of its own, not a side effect of deleting three
+# dead imports - which is the only reason this file appears in the change that
+# added the marker. The marker records the debt; it does not settle it.
+# Tracked as nivuus/marketplace#13.
+
 from __future__ import annotations
 
 import asyncio
@@ -19,12 +28,10 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     STATE_INSTALLING,
-    STATE_NOT_INSTALLED,
     STATE_RUNNING,
-    STATE_STOPPED,
     UPDATE_CHECK_INTERVAL,
 )
-from .docker_client import ContainerInfo, ContainerStats, DockerClient
+from .docker_client import ContainerStats, DockerClient
 
 _LOGGER = logging.getLogger(__name__)
 

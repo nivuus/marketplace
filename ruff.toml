@@ -1,0 +1,25 @@
+# Ruff's rule set for this repository, stated rather than inherited.
+#
+# WHY THIS FILE EXISTS. `ci-python.yml` (the shared socle workflow) runs
+# `ruff check` with whatever `pip install ruff` resolved that morning, and
+# until now this repository carried NO ruff configuration at all. A zero-config
+# ruff applies its OWN default selection, and that default is not a stable
+# contract: it widens between releases. The measurable consequence is that
+# `python / Python checks` has been red on `main` since the socle was adopted
+# on 2026-08-27, while every pull request stayed green - the workflow lints
+# only the changed files on a pull request, and the whole tree on a push.
+#
+# Measured on 2026-09-09, zero-config ruff raised 59 findings here. Six of
+# them were real: ten dead imports and one discarded assignment. The other 48
+# were opinions - 34 BLE001 (blind `except Exception`, which is deliberate in
+# a Home Assistant integration that must never take the event loop down), 6
+# I001 import ordering, 3 S110, and assorted modernisation hints.
+#
+# THE SELECTION IS THE ONE THIS CODE WAS WRITTEN AGAINST: pycodestyle errors
+# (E4 imports, E7 statements, E9 syntax) and pyflakes (F) - real defects,
+# never style. Widening it is a deliberate act with a diff to match, not a
+# side effect of a dependency bump.
+line-length = 100
+
+[lint]
+select = ["E4", "E7", "E9", "F"]

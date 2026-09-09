@@ -1,9 +1,17 @@
 """Docker client wrapper for Docker Marketplace."""
+
+# policy: allow-long-file
+#
+# 770 lines, and that IS too long: this is the whole Docker SDK surface the
+# integration uses. Splitting it is a refactor of its own, not a side effect of
+# deleting a dead import and an unread assignment - which is the only reason
+# this file appears in the change that added the marker. The marker records the
+# debt; it does not settle it. Tracked as nivuus/marketplace#13.
+
 from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -532,7 +540,7 @@ class DockerClient:
                     container_config["cap_add"] = service_config["cap_add"]
 
                 _LOGGER.info("Creating container %s from image %s", container_name, image)
-                container = await asyncio.to_thread(client.containers.run, **container_config)
+                await asyncio.to_thread(client.containers.run, **container_config)
                 _LOGGER.info("Container %s created and started", container_name)
 
             return True

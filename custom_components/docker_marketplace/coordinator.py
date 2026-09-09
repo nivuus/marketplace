@@ -19,12 +19,10 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     STATE_INSTALLING,
-    STATE_NOT_INSTALLED,
     STATE_RUNNING,
-    STATE_STOPPED,
     UPDATE_CHECK_INTERVAL,
 )
-from .docker_client import ContainerInfo, ContainerStats, DockerClient
+from .docker_client import ContainerStats, DockerClient
 
 _LOGGER = logging.getLogger(__name__)
 

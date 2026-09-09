@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -532,7 +531,7 @@ class DockerClient:
                     container_config["cap_add"] = service_config["cap_add"]
 
                 _LOGGER.info("Creating container %s from image %s", container_name, image)
-                container = await asyncio.to_thread(client.containers.run, **container_config)
+                await asyncio.to_thread(client.containers.run, **container_config)
                 _LOGGER.info("Container %s created and started", container_name)
 
             return True

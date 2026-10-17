@@ -22,3 +22,9 @@ jobs:
       # points at the conventional "tests" location anyway; ci-python.yml
       # treats "no tests collected" (pytest exit 5) as success.
       test-paths: tests
+
+  dependabot-auto-merge:
+    uses: nivuus/.github/.github/workflows/dependabot-auto-merge.yml@main
+    permissions:
+      contents: write
+      pull-requests: write

@@ -35,6 +35,7 @@ from .const import (
 )
 from .coordinator import DockerMarketplaceCoordinator
 from .docker_client import DockerClient
+from .validation import validate_app_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -161,18 +162,18 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
         _LOGGER.warning("Frontend files not found at %s", frontend_path)
 
 
-APP_ID_SCHEMA = vol.Schema({vol.Required(ATTR_APP_ID): cv.string})
+APP_ID_SCHEMA = vol.Schema({vol.Required(ATTR_APP_ID): validate_app_id})
 
 SERVICE_SCHEMAS: dict[str, vol.Schema] = {
     SERVICE_INSTALL_APP: vol.Schema(
         {
-            vol.Required(ATTR_APP_ID): cv.string,
+            vol.Required(ATTR_APP_ID): validate_app_id,
             vol.Optional(ATTR_CONFIG, default=dict): dict,
         }
     ),
     SERVICE_REMOVE_APP: vol.Schema(
         {
-            vol.Required(ATTR_APP_ID): cv.string,
+            vol.Required(ATTR_APP_ID): validate_app_id,
             vol.Optional(ATTR_REMOVE_DATA, default=False): cv.boolean,
         }
     ),

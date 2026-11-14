@@ -32,6 +32,12 @@ from .const import (
     UPDATE_CHECK_INTERVAL,
 )
 from .docker_client import ContainerStats, DockerClient
+from .validation import (
+    InvalidAppRequest,
+    require_app_id,
+    validate_app_config,
+    validate_app_id,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -194,6 +200,11 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
         for stack_dir in stack_dirs:
             if not stack_dir.is_dir():
                 continue
+            try:
+                validate_app_id(stack_dir.name)
+            except ValueError:
+                _LOGGER.debug("Ignoring %s: not an application id", stack_dir)
+                continue
 
             # Check for compose file (local or external reference)
             compose_file = stack_dir / "docker-compose.yml"
@@ -264,9 +275,24 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
         # Convention: same as app_id (set in _generate_compose)
         return app_id
 
+    def _stack_dir(self, app_id: str) -> Path:
+        """Return the stack directory of app_id: a direct child of the stacks root.
+
+        Every path derived from an app id goes through here. The id is
+        validated first; then the resolved directory must sit directly under
+        the resolved stacks root, so neither an absolute id, a traversal nor a
+        symlinked stack directory can point anywhere else.
+        """
+        require_app_id(app_id)
+        stack_dir = self.stacks_path / app_id
+        root = self.stacks_path.resolve()
+        if stack_dir.resolve().parent != root:
+            raise InvalidAppRequest(f"The stack of {app_id} is not inside {root}")
+        return stack_dir
+
     async def _get_compose_file(self, app_id: str) -> Path | None:
         """Get compose file path for an app (local or external)."""
-        stack_dir = self.stacks_path / app_id
+        stack_dir = self._stack_dir(app_id)
         compose_file = stack_dir / "docker-compose.yml"
         compose_ref = stack_dir / "compose_ref.txt"
 
@@ -283,10 +309,12 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
         self, app_id: str, config: dict[str, Any] | None = None
     ) -> bool:
         """Install an app from the catalog."""
+        stack_dir = self._stack_dir(app_id)
         app_def = self.catalog.get_app(app_id)
         if not app_def:
             _LOGGER.error("App %s not found in catalog", app_id)
             return False
+        config = validate_app_config(app_def, config or {})
 
         # Check if app has compose config, external file, or raw compose
         if not app_def.compose and not app_def.compose_file and not app_def.compose_raw:
@@ -298,7 +326,6 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
 
         try:
             # Create stack directory
-            stack_dir = self.stacks_path / app_id
             await asyncio.to_thread(stack_dir.mkdir, parents=True, exist_ok=True)
 
             # Save configuration
@@ -353,7 +380,7 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
 
     async def remove_app(self, app_id: str, remove_data: bool = False) -> bool:
         """Remove an installed app."""
-        stack_dir = self.stacks_path / app_id
+        stack_dir = self._stack_dir(app_id)
         compose_file = await self._get_compose_file(app_id)
 
         if not compose_file:
@@ -454,8 +481,24 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
         return await self.start_app(app_id)
 
     async def get_logs(self, app_id: str, tail: int = 100) -> str | None:
-        """Get logs for an app."""
+        """Get logs for an installed app, from a container its stack declares."""
+        compose_file = await self._get_compose_file(app_id)
+        if not compose_file:
+            _LOGGER.warning("App %s is not installed", app_id)
+            return None
+
         container_name = self._get_container_name(app_id)
+        compose_data = await asyncio.to_thread(self._read_compose_file, compose_file)
+        services = (compose_data or {}).get("services") or {}
+        declared = {
+            service.get("container_name", f"{app_id}-{name}-1")
+            for name, service in services.items()
+            if isinstance(service, dict)
+        }
+        if container_name not in declared:
+            _LOGGER.warning("Container %s is not part of app %s", container_name, app_id)
+            return None
+
         return await self.docker_client.get_container_logs(container_name, tail)
 
     def _generate_compose(
@@ -502,7 +545,11 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
                 if not host_path:
                     # Use default path based on stacks directory
                     host_path = str(self.stacks_path / app_def.id / "data" / vol.name)
-                service["volumes"].append(f"{host_path}:{vol.container}")
+                # Long (structured) syntax: a user-supplied path is never
+                # concatenated into a "host:container" string and re-split.
+                service["volumes"].append(
+                    {"type": "bind", "source": host_path, "target": vol.container}
+                )
 
         # Environment variables
         if app_def.environment:
@@ -581,12 +628,13 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
 
     async def update_config(self, app_id: str, config: dict[str, Any]) -> bool:
         """Update configuration for an installed app."""
+        stack_dir = self._stack_dir(app_id)
         app_def = self.catalog.get_app(app_id)
         if not app_def:
             _LOGGER.error("App %s not found in catalog", app_id)
             return False
+        config = validate_app_config(app_def, config)
 
-        stack_dir = self.stacks_path / app_id
         if not stack_dir.exists():
             _LOGGER.error("App %s is not installed", app_id)
             return False
@@ -621,7 +669,7 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
 
     async def get_app_config(self, app_id: str) -> dict[str, Any] | None:
         """Get current configuration for an installed app."""
-        stack_dir = self.stacks_path / app_id
+        stack_dir = self._stack_dir(app_id)
         config_file = stack_dir / "config.yaml"
 
         if not config_file.exists():

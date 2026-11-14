@@ -506,7 +506,13 @@ class DockerClient:
                 if "volumes" in service_config:
                     volumes = {}
                     for vol in service_config["volumes"]:
-                        if isinstance(vol, str) and ":" in vol:
+                        if isinstance(vol, dict) and vol.get("type") == "bind":
+                            # Long syntax, as the integration generates it.
+                            volumes[vol["source"]] = {
+                                "bind": vol["target"],
+                                "mode": "ro" if vol.get("read_only") else "rw",
+                            }
+                        elif isinstance(vol, str) and ":" in vol:
                             parts = vol.split(":")
                             host_path = parts[0]
                             container_path = parts[1]

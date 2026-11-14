@@ -22,6 +22,7 @@ from .const import (
     WS_TYPE_STOP,
     WS_TYPE_UPDATE_CONFIG,
 )
+from .validation import validate_app_id, validate_tail
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ async def websocket_get_installed(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_INSTALL,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
         vol.Optional("config"): dict,
     }
 )
@@ -138,7 +139,7 @@ async def websocket_install_app(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_REMOVE,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
         vol.Optional("remove_data", default=False): bool,
     }
 )
@@ -179,8 +180,8 @@ async def websocket_remove_app(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_LOGS,
-        vol.Required("app_id"): str,
-        vol.Optional("tail", default=100): int,
+        vol.Required("app_id"): validate_app_id,
+        vol.Optional("tail", default=100): validate_tail,
     }
 )
 @websocket_api.async_response
@@ -218,7 +219,7 @@ async def websocket_get_logs(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_APP_STATUS,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
     }
 )
 @websocket_api.async_response
@@ -266,7 +267,7 @@ async def websocket_get_app_status(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_START,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
     }
 )
 @websocket_api.async_response
@@ -297,7 +298,7 @@ async def websocket_start_app(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_STOP,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
     }
 )
 @websocket_api.async_response
@@ -328,7 +329,7 @@ async def websocket_stop_app(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_RESTART,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
     }
 )
 @websocket_api.async_response
@@ -359,7 +360,7 @@ async def websocket_restart_app(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_GET_CONFIG,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
     }
 )
 @websocket_api.async_response
@@ -452,7 +453,7 @@ async def websocket_get_config(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_UPDATE_CONFIG,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
         vol.Required("config"): dict,
     }
 )

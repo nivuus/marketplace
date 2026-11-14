@@ -16,6 +16,11 @@ DEFAULT_CATALOG_PATH: Final = "/config/catalog"
 DEFAULT_STACKS_PATH: Final = "/config/stacks"
 DEFAULT_SCAN_INTERVAL: Final = 30  # seconds
 
+# Ownership labels: the integration acts only on containers carrying both,
+# with LABEL_APP_ID equal to the application id.
+LABEL_MANAGED: Final = "docker_marketplace.managed"
+LABEL_APP_ID: Final = "docker_marketplace.app_id"
+
 # Container states
 STATE_RUNNING: Final = "running"
 STATE_STOPPED: Final = "stopped"

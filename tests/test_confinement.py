@@ -12,6 +12,7 @@ from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.docker_marketplace.const import DOMAIN
 from .app_ids import BAD_APP_IDS
+from .fake_docker import owned_labels
 
 APP_ID_COMMANDS = ["install", "remove", "start", "stop", "restart", "logs", "app_status",
                    "get_config", "update_config"]
@@ -167,7 +168,7 @@ async def test_logs_of_an_installed_app_are_returned(
 ) -> None:
     write_stack(stacks_path, "demo", {"demo": {"image": "example/demo:1",
                                                "container_name": "demo"}})
-    sdk.containers.add("demo")
+    sdk.containers.add("demo", labels=owned_labels("demo"))
 
     assert await coordinator.get_logs("demo", 50) == "log of demo\n"
 

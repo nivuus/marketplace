@@ -20,9 +20,12 @@ import aiohttp
 import docker
 from docker.errors import APIError, ImageNotFound, NotFound
 from docker.models.containers import Container
+from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
     DEFAULT_DOCKER_HOST,
+    LABEL_APP_ID,
+    LABEL_MANAGED,
     STATE_ERROR,
     STATE_NOT_INSTALLED,
     STATE_RUNNING,
@@ -30,6 +33,25 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class ContainerNameConflict(HomeAssistantError):
+    """A container the integration does not own holds a name an app needs."""
+
+
+def is_owned(container: Container, app_id: str) -> bool:
+    """True when container carries both ownership labels for app_id."""
+    labels = container.labels or {}
+    return labels.get(LABEL_MANAGED) == "true" and labels.get(LABEL_APP_ID) == app_id
+
+
+def _service_labels(labels: Any) -> dict[str, str]:
+    """Compose labels in either the mapping or the list ("key=value") form."""
+    if isinstance(labels, dict):
+        return {str(key): str(value) for key, value in labels.items()}
+    if isinstance(labels, list):
+        return dict(str(item).partition("=")[::2] for item in labels)
+    return {}
 
 
 @dataclass
@@ -308,11 +330,14 @@ class DockerClient:
             return False
 
     async def get_container_logs(
-        self, container_name: str, tail: int = 100
+        self, container_name: str, tail: int = 100, *, app_id: str
     ) -> str | None:
-        """Get container logs."""
+        """Get the logs of a container app_id owns."""
         container = await self.get_container(container_name)
         if container is None:
+            return None
+        if not is_owned(container, app_id):
+            _LOGGER.warning("Container %s is not owned by app %s", container_name, app_id)
             return None
 
         try:
@@ -409,10 +434,28 @@ class DockerClient:
         _LOGGER.info("Container %s recreated and started", name)
         return True
 
+    async def foreign_containers(
+        self, compose_data: dict[str, Any], project_name: str
+    ) -> list[str]:
+        """Container names the stack needs that exist without app ownership."""
+        client = await self._ensure_client()
+        foreign = []
+        for service_name, service_config in (compose_data.get("services") or {}).items():
+            container_name = service_config.get(
+                "container_name", f"{project_name}-{service_name}-1"
+            )
+            try:
+                container = await asyncio.to_thread(client.containers.get, container_name)
+            except NotFound:
+                continue
+            if not is_owned(container, project_name):
+                foreign.append(container_name)
+        return foreign
+
     async def compose_up(
         self,
         compose_file: Path,
-        project_name: str | None = None,
+        project_name: str,
         detach: bool = True,
         pull: bool = True,
         recreate: bool = False,
@@ -433,6 +476,15 @@ class DockerClient:
             services = compose_data.get("services", {})
             if not services:
                 _LOGGER.error("No services found in compose file")
+                return False
+
+            foreign = await self.foreign_containers(compose_data, project_name)
+            if foreign:
+                _LOGGER.error(
+                    "Refusing to start %s: container(s) %s were not created by "
+                    "this integration for it",
+                    project_name, ", ".join(foreign),
+                )
                 return False
 
             for service_name, service_config in services.items():
@@ -482,7 +534,12 @@ class DockerClient:
                     "image": image,
                     "name": container_name,
                     "detach": detach,
-                    "labels": service_config.get("labels", {}),
+                    # Ownership labels on every service, raw compose included.
+                    "labels": {
+                        **_service_labels(service_config.get("labels")),
+                        LABEL_MANAGED: "true",
+                        LABEL_APP_ID: project_name,
+                    },
                 }
 
                 # Restart policy
@@ -557,7 +614,7 @@ class DockerClient:
     async def compose_down(
         self,
         compose_file: Path,
-        project_name: str | None = None,
+        project_name: str,
         volumes: bool = False,
         remove_orphans: bool = True,
     ) -> bool:
@@ -569,6 +626,15 @@ class DockerClient:
             compose_data = await asyncio.to_thread(self._read_yaml_file, compose_file)
 
             services = compose_data.get("services", {})
+
+            foreign = await self.foreign_containers(compose_data, project_name)
+            if foreign:
+                _LOGGER.error(
+                    "Refusing to stop %s: container(s) %s were not created by "
+                    "this integration for it",
+                    project_name, ", ".join(foreign),
+                )
+                return False
 
             for service_name, service_config in services.items():
                 container_name = service_config.get("container_name", f"{project_name}-{service_name}-1")

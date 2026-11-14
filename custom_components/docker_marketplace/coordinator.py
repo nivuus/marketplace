@@ -27,11 +27,13 @@ from .catalog import AppDefinition, Catalog
 from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    LABEL_APP_ID,
+    LABEL_MANAGED,
     STATE_INSTALLING,
     STATE_RUNNING,
     UPDATE_CHECK_INTERVAL,
 )
-from .docker_client import ContainerStats, DockerClient
+from .docker_client import ContainerNameConflict, ContainerStats, DockerClient
 from .validation import (
     InvalidAppRequest,
     require_app_id,
@@ -321,6 +323,16 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
             _LOGGER.error("App %s has no compose configuration", app_id)
             return False
 
+        # Refuse before writing anything when a container this app does not
+        # own already holds a name the stack needs: it is never adopted.
+        planned = await self._planned_compose(app_def, config)
+        foreign = await self.docker_client.foreign_containers(planned, app_id)
+        if foreign:
+            raise ContainerNameConflict(
+                f"Cannot install {app_id}: container(s) {', '.join(foreign)} "
+                "already exist and were not created by this integration for it"
+            )
+
         _LOGGER.info("Installing app %s", app_id)
         self._installing.add(app_id)
 
@@ -341,7 +353,7 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
 
             if app_def.compose_raw:
                 # Use raw compose content directly (multi-service stacks)
-                await asyncio.to_thread(self._write_compose_file, compose_file, app_def.compose_raw)
+                await asyncio.to_thread(self._write_compose_file, compose_file, planned)
                 _LOGGER.info("Using raw compose content for %s", app_id)
             elif app_def.compose_file:
                 # Use external compose file directly
@@ -356,8 +368,7 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
                 _LOGGER.info("Using external compose file: %s", compose_file)
             else:
                 # Generate docker-compose.yml from single-service definition
-                compose_content = self._generate_compose(app_def, config)
-                await asyncio.to_thread(self._write_compose_file, compose_file, compose_content)
+                await asyncio.to_thread(self._write_compose_file, compose_file, planned)
 
             # Run docker compose up
             success = await self.docker_client.compose_up(
@@ -377,6 +388,19 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
             return False
         finally:
             self._installing.discard(app_id)
+
+    async def _planned_compose(
+        self, app_def: AppDefinition, config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """The compose content an install of app_def would run."""
+        if app_def.compose_raw:
+            return app_def.compose_raw
+        if app_def.compose_file:
+            external = Path(app_def.compose_file)
+            if not external.exists():
+                return {}
+            return await asyncio.to_thread(self._read_compose_file, external) or {}
+        return self._generate_compose(app_def, config)
 
     async def remove_app(self, app_id: str, remove_data: bool = False) -> bool:
         """Remove an installed app."""
@@ -499,7 +523,9 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
             _LOGGER.warning("Container %s is not part of app %s", container_name, app_id)
             return None
 
-        return await self.docker_client.get_container_logs(container_name, tail)
+        return await self.docker_client.get_container_logs(
+            container_name, tail, app_id=app_id
+        )
 
     def _generate_compose(
         self, app_def: AppDefinition, config: dict[str, Any] | None = None
@@ -561,8 +587,8 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
 
         # Labels for identification
         service["labels"] = {
-            "docker_marketplace.app_id": app_def.id,
-            "docker_marketplace.managed": "true",
+            LABEL_APP_ID: app_def.id,
+            LABEL_MANAGED: "true",
         }
 
         return {

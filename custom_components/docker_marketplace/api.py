@@ -26,6 +26,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_CATALOG,
@@ -47,6 +48,7 @@ async def websocket_get_catalog(
     connection.send_result(msg["id"], catalog.to_dict())
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_INSTALLED,
@@ -83,6 +85,7 @@ async def websocket_get_installed(
     connection.send_result(msg["id"], {"apps": apps})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_INSTALL,
@@ -131,6 +134,7 @@ async def websocket_install_app(
         )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_REMOVE,
@@ -171,6 +175,7 @@ async def websocket_remove_app(
         )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_LOGS,
@@ -209,6 +214,7 @@ async def websocket_get_logs(
         )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_APP_STATUS,
@@ -256,6 +262,7 @@ async def websocket_get_app_status(
     connection.send_result(msg["id"], result)
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_START,
@@ -286,6 +293,7 @@ async def websocket_start_app(
         connection.send_error(msg["id"], "start_failed", f"Failed to start {app_id}")
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_STOP,
@@ -316,6 +324,7 @@ async def websocket_stop_app(
         connection.send_error(msg["id"], "stop_failed", f"Failed to stop {app_id}")
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_RESTART,
@@ -346,6 +355,7 @@ async def websocket_restart_app(
         connection.send_error(msg["id"], "restart_failed", f"Failed to restart {app_id}")
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_GET_CONFIG,
@@ -374,9 +384,22 @@ async def websocket_get_config(
     # Get app definition for schema info
     app_def = catalog.get_app(app_id) if catalog else None
 
+    # Stored values of secret fields never leave the server: the form shows
+    # them empty, and update_config keeps the stored value for any key it
+    # does not receive.
+    secret_keys = (
+        {f"env_{env.name}" for env in app_def.environment if env.secret}
+        if app_def
+        else set()
+    )
+
     result = {
         "app_id": app_id,
-        "config": config or {},
+        "config": {
+            key: value
+            for key, value in (config or {}).items()
+            if key not in secret_keys
+        },
         "schema": None,
     }
 
@@ -425,6 +448,7 @@ async def websocket_get_config(
     connection.send_result(msg["id"], result)
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_UPDATE_CONFIG,

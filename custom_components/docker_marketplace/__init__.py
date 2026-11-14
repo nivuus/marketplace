@@ -11,6 +11,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.service import async_register_admin_service
 
 from .catalog import Catalog
 from .const import (
@@ -204,11 +205,15 @@ async def _async_register_services(
         SERVICE_RESTART_APP: async_restart_app,
     }
 
+    # Every service installs, removes or drives containers: admin only.
+    # async_register_admin_service refuses a call whose context carries a
+    # non-admin user, then runs the handler through HassJob.
     # Bind hass/coordinator with partial: HassJob unwraps functools.partial to
     # detect the coroutine function. A lambda would be classified as a sync
     # handler, run in the executor, and its coroutine silently never awaited.
     for service, handler in handlers.items():
-        hass.services.async_register(
+        async_register_admin_service(
+            hass,
             DOMAIN,
             service,
             partial(handler, hass, coordinator),

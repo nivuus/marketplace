@@ -389,7 +389,12 @@ class DockerClient:
             entrypoint = None
 
         # Ports that must stay exposed for the preserved PortBindings to work.
-        exposed_ports = list((config.get("ExposedPorts") or {}).keys())
+        # Inspect reports "1884/tcp"; the SDK expects 1884 or (1884, "tcp") and
+        # appends "/tcp" to anything that is not a tuple.
+        exposed_ports = []
+        for key in config.get("ExposedPorts") or {}:
+            port, _, protocol = str(key).partition("/")
+            exposed_ports.append((port, protocol or "tcp"))
 
         # Stop + remove the old container (config already captured above).
         try:
@@ -452,6 +457,12 @@ class DockerClient:
                 foreign.append(container_name)
         return foreign
 
+    @staticmethod
+    async def _runs_image(client, container: Container, image: str) -> bool:
+        """True when container runs the image the local tag image points to."""
+        local = await asyncio.to_thread(client.images.get, image)
+        return container.image.id == local.id
+
     async def compose_up(
         self,
         compose_file: Path,
@@ -506,6 +517,13 @@ class DockerClient:
                 # Check if container already exists
                 try:
                     existing = await asyncio.to_thread(client.containers.get, container_name)
+                    if recreate and await self._runs_image(client, existing, image):
+                        # The pulled image is the one already running: keep
+                        # the container, only make sure it is up.
+                        if existing.status != "running":
+                            await asyncio.to_thread(existing.start)
+                        _LOGGER.info("%s already runs the latest %s", container_name, image)
+                        continue
                     if recreate:
                         # Update path: recreate the container from its OWN live
                         # config (inspect) with only the image swapped, so every

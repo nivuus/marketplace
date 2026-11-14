@@ -445,8 +445,11 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
         _LOGGER.info("Updating app %s", app_id)
 
         try:
-            # Pull latest images
-            await self.docker_client.compose_pull(compose_file, project_name=app_id)
+            # Pull latest images. Without them there is nothing to update to:
+            # stop here rather than recreate the container on its old image.
+            if not await self.docker_client.compose_pull(compose_file, project_name=app_id):
+                _LOGGER.error("Not updating app %s: pulling its images failed", app_id)
+                return False
 
             # Recreate with the freshly pulled images: stop + remove + create + start,
             # so the new image and restart policy are actually applied (a plain

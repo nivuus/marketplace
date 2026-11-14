@@ -18,7 +18,7 @@ A Home Assistant custom integration that provides a marketplace for installing a
 1. Open HACS in Home Assistant
 2. Click on "Integrations"
 3. Click the three dots menu and select "Custom repositories"
-4. Add `https://github.com/nivuus/ha-docker-marketplace` with category "Integration"
+4. Add `https://github.com/nivuus/marketplace` with category "Integration"
 5. Search for "Docker Marketplace" and install
 6. Restart Home Assistant
 
@@ -36,8 +36,8 @@ During setup, you'll need to provide:
 | Option | Default | Description |
 |--------|---------|-------------|
 | Docker Host | `unix:///var/run/docker.sock` | Docker socket or TCP address |
-| Catalog Path | `/opt/nivuus/marketplace/catalog` | Path to the app catalog |
-| Stacks Path | `/opt/nivuus/stacks` | Where installed apps are stored |
+| Catalog Path | `/config/catalog` | Path to the app catalog |
+| Stacks Path | `/config/stacks` | Where installed apps are stored |
 
 ## Usage
 
@@ -155,7 +155,7 @@ marketplace/
 
 ## License
 
-MIT License
+PolyForm Noncommercial License 1.0.0 - see [LICENSE.md](LICENSE.md).
 
 ## Contributing
 

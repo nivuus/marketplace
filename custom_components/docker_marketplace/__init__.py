@@ -10,6 +10,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.service import async_register_admin_service
 
@@ -64,14 +65,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Create Docker client
     docker_client = DockerClient(docker_host)
 
-    # Test Docker connection
+    # Test Docker connection. ConfigEntryNotReady is what makes Home
+    # Assistant retry the setup later; returning False would fail it for good.
     if not await docker_client.connect():
-        _LOGGER.error("Failed to connect to Docker at %s", docker_host)
-        return False
+        docker_client.close()
+        raise ConfigEntryNotReady(f"Cannot connect to Docker at {docker_host}")
 
     # Create and load catalog
     catalog = Catalog(catalog_path)
-    await catalog.load()
+    if not await catalog.load():
+        docker_client.close()
+        raise ConfigEntryNotReady(f"Cannot load the catalogue at {catalog_path}")
 
     # Create coordinator
     coordinator = DockerMarketplaceCoordinator(

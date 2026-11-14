@@ -70,8 +70,10 @@ mount, and editing it does nothing.
 
 ### Docker access goes through the socket proxy, never the raw socket
 
-`docker_client.py` targets `tcp://127.0.0.1:2375` — the `tecnativa/docker-socket-proxy`
-container, not `/var/run/docker.sock`. The proxy is configured `EXEC=0 BUILD=0 SECRETS=0
+The code default (`DEFAULT_DOCKER_HOST` in `const.py`) is the raw socket
+`unix:///var/run/docker.sock`; nothing in the code enforces the proxy. The config entry's
+Docker host must be set to the `tecnativa/docker-socket-proxy` address
+(`tcp://127.0.0.1:2375`) instead. The proxy is configured `EXEC=0 BUILD=0 SECRETS=0
 CONFIGS=0 SWARM=0 SYSTEM=0 AUTH=0` and `ALLOW_START=0 ALLOW_STOP=0 ALLOW_RESTARTS=0`, with
 `POST=1 CONTAINERS=1 IMAGES=1`. Keep it that way: widening the proxy is the wrong lever,
 and container lifecycle actions must go through compose, not the Docker API.

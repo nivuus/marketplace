@@ -126,7 +126,7 @@ class AppStartButton(AppBaseButton):
     def available(self) -> bool:
         """Return if button is available."""
         app = self._get_installed_app()
-        return app is not None and app.state == STATE_STOPPED
+        return super().available and app is not None and app.state == STATE_STOPPED
 
     async def async_press(self) -> None:
         """Handle button press."""
@@ -152,7 +152,7 @@ class AppStopButton(AppBaseButton):
     def available(self) -> bool:
         """Return if button is available."""
         app = self._get_installed_app()
-        return app is not None and app.state == STATE_RUNNING
+        return super().available and app is not None and app.state == STATE_RUNNING
 
     async def async_press(self) -> None:
         """Handle button press."""
@@ -178,7 +178,7 @@ class AppRestartButton(AppBaseButton):
     def available(self) -> bool:
         """Return if button is available."""
         app = self._get_installed_app()
-        return app is not None and app.state == STATE_RUNNING
+        return super().available and app is not None and app.state == STATE_RUNNING
 
     async def async_press(self) -> None:
         """Handle button press."""

@@ -187,4 +187,4 @@ class AppUpdateEntity(CoordinatorEntity[DockerMarketplaceCoordinator], UpdateEnt
     def available(self) -> bool:
         """Return if entity is available."""
         app = self._get_installed_app()
-        return app is not None
+        return super().available and app is not None

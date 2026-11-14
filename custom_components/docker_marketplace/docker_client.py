@@ -27,7 +27,6 @@ from .const import (
     LABEL_APP_ID,
     LABEL_MANAGED,
     STATE_ERROR,
-    STATE_NOT_INSTALLED,
     STATE_RUNNING,
     STATE_STOPPED,
 )
@@ -109,16 +108,15 @@ class DockerClient:
             return False
 
     async def get_container(self, container_name: str) -> Container | None:
-        """Get container by name."""
+        """Get container by name; None only when Docker says it does not exist.
+
+        Any other error (an unreachable daemon above all) propagates, so the
+        coordinator's refresh fails instead of reporting every app as gone.
+        """
+        client = await self._ensure_client()
         try:
-            client = await self._ensure_client()
-            return await asyncio.to_thread(
-                client.containers.get, container_name
-            )
+            return await asyncio.to_thread(client.containers.get, container_name)
         except NotFound:
-            return None
-        except Exception as err:
-            _LOGGER.error("Error getting container %s: %s", container_name, err)
             return None
 
     async def get_container_info(self, container_name: str) -> ContainerInfo | None:
@@ -185,42 +183,31 @@ class DockerClient:
             return None
 
     async def get_container_state(self, container_name: str) -> str:
-        """Get container state as a simple string."""
+        """State of an installed app's container; no container means stopped."""
         container = await self.get_container(container_name)
         if container is None:
-            return STATE_NOT_INSTALLED
+            # Stopping an app removes its container: the app is still installed.
+            return STATE_STOPPED
         return self._map_status_to_state(container.status)
 
     async def get_project_state(self, project_name: str) -> str:
         """Get state for a Docker Compose project (multi-container stack).
 
         Checks for containers with the project name prefix (e.g., mediamanager-*).
-        Returns running if any container is running, stopped if all are stopped.
+        Returns running if any container is running, stopped otherwise -
+        including when the installed stack has no container at all. Errors
+        reaching Docker propagate.
         """
-        try:
-            client = await self._ensure_client()
-            # Filter by compose project label
-            filters = {"label": f"com.docker.compose.project={project_name}"}
-            containers = await asyncio.to_thread(
-                client.containers.list, all=True, filters=filters
-            )
+        client = await self._ensure_client()
+        # Filter by compose project label
+        filters = {"label": f"com.docker.compose.project={project_name}"}
+        containers = await asyncio.to_thread(
+            client.containers.list, all=True, filters=filters
+        )
 
-            if not containers:
-                return STATE_NOT_INSTALLED
-
-            # Check states of all containers
-            running_count = 0
-            for container in containers:
-                if container.status == "running":
-                    running_count += 1
-
-            if running_count > 0:
-                return STATE_RUNNING
-            return STATE_STOPPED
-
-        except Exception as err:
-            _LOGGER.debug("Error getting project state for %s: %s", project_name, err)
-            return STATE_NOT_INSTALLED
+        if any(container.status == "running" for container in containers):
+            return STATE_RUNNING
+        return STATE_STOPPED
 
     async def list_containers(
         self, all_containers: bool = True, label_filter: str | None = None

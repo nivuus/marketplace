@@ -1,0 +1,18 @@
+# Test catalogue entry: a raw multi-service compose stack.
+id: stack
+name: Stack
+category: web
+description: Raw compose stack used by the test suite
+
+compose_raw:
+  services:
+    stack:
+      image: example/stack:1
+      container_name: stack
+      restart: always
+      ports:
+        - "19000:9000"
+    stack-db:
+      image: example/stack-db:1
+      container_name: stack-db
+      restart: always

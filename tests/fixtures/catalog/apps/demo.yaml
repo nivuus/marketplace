@@ -1,0 +1,28 @@
+# Test catalogue entry: one generated single-service application.
+id: demo
+name: Demo
+category: web
+description: Application used by the test suite
+
+ports:
+  - container: 8080
+    host: 18080
+    protocol: tcp
+    description: Web interface
+
+volumes:
+  - name: data
+    container: /data
+    description: Data directory
+
+environment:
+  - name: TZ
+    default: "UTC"
+    description: Timezone
+  - name: API_TOKEN
+    description: Token the application authenticates with
+    secret: true
+
+compose:
+  image: example/demo:1
+  restart: unless-stopped

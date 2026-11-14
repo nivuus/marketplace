@@ -10,5 +10,10 @@ updates:
     directory: "/frontend"
     schedule:
       interval: weekly
+    # Production dependencies are bundled into the shipped panel, so their
+    # bumps must be releasable: the shared release script only cuts a
+    # release for fix/perf/refactor/feat subjects. Development dependencies
+    # (the build toolchain) keep chore.
     commit-message:
-      prefix: "chore"
+      prefix: "fix"
+      prefix-development: "chore"

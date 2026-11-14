@@ -22,10 +22,12 @@ from .const import (
     WS_TYPE_STOP,
     WS_TYPE_UPDATE_CONFIG,
 )
+from .validation import validate_app_id, validate_tail
 
 _LOGGER = logging.getLogger(__name__)
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_CATALOG,
@@ -47,6 +49,7 @@ async def websocket_get_catalog(
     connection.send_result(msg["id"], catalog.to_dict())
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_INSTALLED,
@@ -83,10 +86,11 @@ async def websocket_get_installed(
     connection.send_result(msg["id"], {"apps": apps})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_INSTALL,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
         vol.Optional("config"): dict,
     }
 )
@@ -131,10 +135,11 @@ async def websocket_install_app(
         )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_REMOVE,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
         vol.Optional("remove_data", default=False): bool,
     }
 )
@@ -171,11 +176,12 @@ async def websocket_remove_app(
         )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_LOGS,
-        vol.Required("app_id"): str,
-        vol.Optional("tail", default=100): int,
+        vol.Required("app_id"): validate_app_id,
+        vol.Optional("tail", default=100): validate_tail,
     }
 )
 @websocket_api.async_response
@@ -209,10 +215,11 @@ async def websocket_get_logs(
         )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_APP_STATUS,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
     }
 )
 @websocket_api.async_response
@@ -256,10 +263,11 @@ async def websocket_get_app_status(
     connection.send_result(msg["id"], result)
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_START,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
     }
 )
 @websocket_api.async_response
@@ -286,10 +294,11 @@ async def websocket_start_app(
         connection.send_error(msg["id"], "start_failed", f"Failed to start {app_id}")
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_STOP,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
     }
 )
 @websocket_api.async_response
@@ -316,10 +325,11 @@ async def websocket_stop_app(
         connection.send_error(msg["id"], "stop_failed", f"Failed to stop {app_id}")
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_RESTART,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
     }
 )
 @websocket_api.async_response
@@ -346,10 +356,11 @@ async def websocket_restart_app(
         connection.send_error(msg["id"], "restart_failed", f"Failed to restart {app_id}")
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_GET_CONFIG,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
     }
 )
 @websocket_api.async_response
@@ -374,9 +385,22 @@ async def websocket_get_config(
     # Get app definition for schema info
     app_def = catalog.get_app(app_id) if catalog else None
 
+    # Stored values of secret fields never leave the server: the form shows
+    # them empty, and update_config keeps the stored value for any key it
+    # does not receive.
+    secret_keys = (
+        {f"env_{env.name}" for env in app_def.environment if env.secret}
+        if app_def
+        else set()
+    )
+
     result = {
         "app_id": app_id,
-        "config": config or {},
+        "config": {
+            key: value
+            for key, value in (config or {}).items()
+            if key not in secret_keys
+        },
         "schema": None,
     }
 
@@ -425,10 +449,11 @@ async def websocket_get_config(
     connection.send_result(msg["id"], result)
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_UPDATE_CONFIG,
-        vol.Required("app_id"): str,
+        vol.Required("app_id"): validate_app_id,
         vol.Required("config"): dict,
     }
 )

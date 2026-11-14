@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from .const import CATEGORIES, CATEGORY_ICONS, DEFAULT_CATALOG_PATH
+from .validation import validate_app_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -233,6 +234,11 @@ class Catalog:
             app_id = data.get("id")
             if not app_id:
                 _LOGGER.warning("App missing required 'id' field")
+                return None
+            try:
+                validate_app_id(app_id)
+            except ValueError as err:
+                _LOGGER.error("Skipping catalogue entry %r: %s", app_id, err)
                 return None
 
             # Parse requirements

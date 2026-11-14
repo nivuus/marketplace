@@ -10,7 +10,9 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.service import async_register_admin_service
 
 from .catalog import Catalog
 from .const import (
@@ -34,6 +36,7 @@ from .const import (
 )
 from .coordinator import DockerMarketplaceCoordinator
 from .docker_client import DockerClient
+from .validation import validate_app_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,14 +65,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Create Docker client
     docker_client = DockerClient(docker_host)
 
-    # Test Docker connection
+    # Test Docker connection. ConfigEntryNotReady is what makes Home
+    # Assistant retry the setup later; returning False would fail it for good.
     if not await docker_client.connect():
-        _LOGGER.error("Failed to connect to Docker at %s", docker_host)
-        return False
+        docker_client.close()
+        raise ConfigEntryNotReady(f"Cannot connect to Docker at {docker_host}")
 
     # Create and load catalog
     catalog = Catalog(catalog_path)
-    await catalog.load()
+    if not await catalog.load():
+        docker_client.close()
+        raise ConfigEntryNotReady(f"Cannot load the catalogue at {catalog_path}")
 
     # Create coordinator
     coordinator = DockerMarketplaceCoordinator(
@@ -160,18 +166,18 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
         _LOGGER.warning("Frontend files not found at %s", frontend_path)
 
 
-APP_ID_SCHEMA = vol.Schema({vol.Required(ATTR_APP_ID): cv.string})
+APP_ID_SCHEMA = vol.Schema({vol.Required(ATTR_APP_ID): validate_app_id})
 
 SERVICE_SCHEMAS: dict[str, vol.Schema] = {
     SERVICE_INSTALL_APP: vol.Schema(
         {
-            vol.Required(ATTR_APP_ID): cv.string,
+            vol.Required(ATTR_APP_ID): validate_app_id,
             vol.Optional(ATTR_CONFIG, default=dict): dict,
         }
     ),
     SERVICE_REMOVE_APP: vol.Schema(
         {
-            vol.Required(ATTR_APP_ID): cv.string,
+            vol.Required(ATTR_APP_ID): validate_app_id,
             vol.Optional(ATTR_REMOVE_DATA, default=False): cv.boolean,
         }
     ),
@@ -204,11 +210,15 @@ async def _async_register_services(
         SERVICE_RESTART_APP: async_restart_app,
     }
 
+    # Every service installs, removes or drives containers: admin only.
+    # async_register_admin_service refuses a call whose context carries a
+    # non-admin user, then runs the handler through HassJob.
     # Bind hass/coordinator with partial: HassJob unwraps functools.partial to
     # detect the coroutine function. A lambda would be classified as a sync
     # handler, run in the executor, and its coroutine silently never awaited.
     for service, handler in handlers.items():
-        hass.services.async_register(
+        async_register_admin_service(
+            hass,
             DOMAIN,
             service,
             partial(handler, hass, coordinator),

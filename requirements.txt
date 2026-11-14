@@ -10,3 +10,15 @@
 # custom_components/docker_marketplace/manifest.json, the way Home Assistant
 # expects; this file exists for the CI toolchain only.
 ruff==0.16.6
+
+# Test harness. pytest-homeassistant is published from home-assistant/core and
+# pins the Home Assistant release it tests against (2026.11.1 here); it
+# supersedes pytest-homeassistant-custom-component, whose last release was
+# 2026.10.25. It requires Python >= 3.14.2, so the CI job that installs this
+# file must run Python 3.14. Bump it together with the Home Assistant version
+# the integration is validated on.
+pytest-homeassistant==2026.11.1
+
+# The integration's own runtime requirement (manifest.json), which Home
+# Assistant would install at setup time and the test harness does not.
+docker==7.2.0

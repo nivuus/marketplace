@@ -20,16 +20,37 @@ import aiohttp
 import docker
 from docker.errors import APIError, ImageNotFound, NotFound
 from docker.models.containers import Container
+from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
     DEFAULT_DOCKER_HOST,
+    LABEL_APP_ID,
+    LABEL_MANAGED,
     STATE_ERROR,
-    STATE_NOT_INSTALLED,
     STATE_RUNNING,
     STATE_STOPPED,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class ContainerNameConflict(HomeAssistantError):
+    """A container the integration does not own holds a name an app needs."""
+
+
+def is_owned(container: Container, app_id: str) -> bool:
+    """True when container carries both ownership labels for app_id."""
+    labels = container.labels or {}
+    return labels.get(LABEL_MANAGED) == "true" and labels.get(LABEL_APP_ID) == app_id
+
+
+def _service_labels(labels: Any) -> dict[str, str]:
+    """Compose labels in either the mapping or the list ("key=value") form."""
+    if isinstance(labels, dict):
+        return {str(key): str(value) for key, value in labels.items()}
+    if isinstance(labels, list):
+        return dict(str(item).partition("=")[::2] for item in labels)
+    return {}
 
 
 @dataclass
@@ -87,16 +108,15 @@ class DockerClient:
             return False
 
     async def get_container(self, container_name: str) -> Container | None:
-        """Get container by name."""
+        """Get container by name; None only when Docker says it does not exist.
+
+        Any other error (an unreachable daemon above all) propagates, so the
+        coordinator's refresh fails instead of reporting every app as gone.
+        """
+        client = await self._ensure_client()
         try:
-            client = await self._ensure_client()
-            return await asyncio.to_thread(
-                client.containers.get, container_name
-            )
+            return await asyncio.to_thread(client.containers.get, container_name)
         except NotFound:
-            return None
-        except Exception as err:
-            _LOGGER.error("Error getting container %s: %s", container_name, err)
             return None
 
     async def get_container_info(self, container_name: str) -> ContainerInfo | None:
@@ -163,42 +183,31 @@ class DockerClient:
             return None
 
     async def get_container_state(self, container_name: str) -> str:
-        """Get container state as a simple string."""
+        """State of an installed app's container; no container means stopped."""
         container = await self.get_container(container_name)
         if container is None:
-            return STATE_NOT_INSTALLED
+            # Stopping an app removes its container: the app is still installed.
+            return STATE_STOPPED
         return self._map_status_to_state(container.status)
 
     async def get_project_state(self, project_name: str) -> str:
         """Get state for a Docker Compose project (multi-container stack).
 
         Checks for containers with the project name prefix (e.g., mediamanager-*).
-        Returns running if any container is running, stopped if all are stopped.
+        Returns running if any container is running, stopped otherwise -
+        including when the installed stack has no container at all. Errors
+        reaching Docker propagate.
         """
-        try:
-            client = await self._ensure_client()
-            # Filter by compose project label
-            filters = {"label": f"com.docker.compose.project={project_name}"}
-            containers = await asyncio.to_thread(
-                client.containers.list, all=True, filters=filters
-            )
+        client = await self._ensure_client()
+        # Filter by compose project label
+        filters = {"label": f"com.docker.compose.project={project_name}"}
+        containers = await asyncio.to_thread(
+            client.containers.list, all=True, filters=filters
+        )
 
-            if not containers:
-                return STATE_NOT_INSTALLED
-
-            # Check states of all containers
-            running_count = 0
-            for container in containers:
-                if container.status == "running":
-                    running_count += 1
-
-            if running_count > 0:
-                return STATE_RUNNING
-            return STATE_STOPPED
-
-        except Exception as err:
-            _LOGGER.debug("Error getting project state for %s: %s", project_name, err)
-            return STATE_NOT_INSTALLED
+        if any(container.status == "running" for container in containers):
+            return STATE_RUNNING
+        return STATE_STOPPED
 
     async def list_containers(
         self, all_containers: bool = True, label_filter: str | None = None
@@ -308,11 +317,14 @@ class DockerClient:
             return False
 
     async def get_container_logs(
-        self, container_name: str, tail: int = 100
+        self, container_name: str, tail: int = 100, *, app_id: str
     ) -> str | None:
-        """Get container logs."""
+        """Get the logs of a container app_id owns."""
         container = await self.get_container(container_name)
         if container is None:
+            return None
+        if not is_owned(container, app_id):
+            _LOGGER.warning("Container %s is not owned by app %s", container_name, app_id)
             return None
 
         try:
@@ -364,7 +376,12 @@ class DockerClient:
             entrypoint = None
 
         # Ports that must stay exposed for the preserved PortBindings to work.
-        exposed_ports = list((config.get("ExposedPorts") or {}).keys())
+        # Inspect reports "1884/tcp"; the SDK expects 1884 or (1884, "tcp") and
+        # appends "/tcp" to anything that is not a tuple.
+        exposed_ports = []
+        for key in config.get("ExposedPorts") or {}:
+            port, _, protocol = str(key).partition("/")
+            exposed_ports.append((port, protocol or "tcp"))
 
         # Stop + remove the old container (config already captured above).
         try:
@@ -409,10 +426,34 @@ class DockerClient:
         _LOGGER.info("Container %s recreated and started", name)
         return True
 
+    async def foreign_containers(
+        self, compose_data: dict[str, Any], project_name: str
+    ) -> list[str]:
+        """Container names the stack needs that exist without app ownership."""
+        client = await self._ensure_client()
+        foreign = []
+        for service_name, service_config in (compose_data.get("services") or {}).items():
+            container_name = service_config.get(
+                "container_name", f"{project_name}-{service_name}-1"
+            )
+            try:
+                container = await asyncio.to_thread(client.containers.get, container_name)
+            except NotFound:
+                continue
+            if not is_owned(container, project_name):
+                foreign.append(container_name)
+        return foreign
+
+    @staticmethod
+    async def _runs_image(client, container: Container, image: str) -> bool:
+        """True when container runs the image the local tag image points to."""
+        local = await asyncio.to_thread(client.images.get, image)
+        return container.image.id == local.id
+
     async def compose_up(
         self,
         compose_file: Path,
-        project_name: str | None = None,
+        project_name: str,
         detach: bool = True,
         pull: bool = True,
         recreate: bool = False,
@@ -435,6 +476,15 @@ class DockerClient:
                 _LOGGER.error("No services found in compose file")
                 return False
 
+            foreign = await self.foreign_containers(compose_data, project_name)
+            if foreign:
+                _LOGGER.error(
+                    "Refusing to start %s: container(s) %s were not created by "
+                    "this integration for it",
+                    project_name, ", ".join(foreign),
+                )
+                return False
+
             for service_name, service_config in services.items():
                 image = service_config.get("image")
                 if not image:
@@ -454,6 +504,13 @@ class DockerClient:
                 # Check if container already exists
                 try:
                     existing = await asyncio.to_thread(client.containers.get, container_name)
+                    if recreate and await self._runs_image(client, existing, image):
+                        # The pulled image is the one already running: keep
+                        # the container, only make sure it is up.
+                        if existing.status != "running":
+                            await asyncio.to_thread(existing.start)
+                        _LOGGER.info("%s already runs the latest %s", container_name, image)
+                        continue
                     if recreate:
                         # Update path: recreate the container from its OWN live
                         # config (inspect) with only the image swapped, so every
@@ -482,7 +539,12 @@ class DockerClient:
                     "image": image,
                     "name": container_name,
                     "detach": detach,
-                    "labels": service_config.get("labels", {}),
+                    # Ownership labels on every service, raw compose included.
+                    "labels": {
+                        **_service_labels(service_config.get("labels")),
+                        LABEL_MANAGED: "true",
+                        LABEL_APP_ID: project_name,
+                    },
                 }
 
                 # Restart policy
@@ -506,7 +568,13 @@ class DockerClient:
                 if "volumes" in service_config:
                     volumes = {}
                     for vol in service_config["volumes"]:
-                        if isinstance(vol, str) and ":" in vol:
+                        if isinstance(vol, dict) and vol.get("type") == "bind":
+                            # Long syntax, as the integration generates it.
+                            volumes[vol["source"]] = {
+                                "bind": vol["target"],
+                                "mode": "ro" if vol.get("read_only") else "rw",
+                            }
+                        elif isinstance(vol, str) and ":" in vol:
                             parts = vol.split(":")
                             host_path = parts[0]
                             container_path = parts[1]
@@ -551,7 +619,7 @@ class DockerClient:
     async def compose_down(
         self,
         compose_file: Path,
-        project_name: str | None = None,
+        project_name: str,
         volumes: bool = False,
         remove_orphans: bool = True,
     ) -> bool:
@@ -563,6 +631,15 @@ class DockerClient:
             compose_data = await asyncio.to_thread(self._read_yaml_file, compose_file)
 
             services = compose_data.get("services", {})
+
+            foreign = await self.foreign_containers(compose_data, project_name)
+            if foreign:
+                _LOGGER.error(
+                    "Refusing to stop %s: container(s) %s were not created by "
+                    "this integration for it",
+                    project_name, ", ".join(foreign),
+                )
+                return False
 
             for service_name, service_config in services.items():
                 container_name = service_config.get("container_name", f"{project_name}-{service_name}-1")

@@ -104,7 +104,10 @@ class AppPowerSwitch(CoordinatorEntity[DockerMarketplaceCoordinator], SwitchEnti
     def available(self) -> bool:
         """Return if switch is available."""
         app = self._get_installed_app()
-        return app is not None and app.state in (STATE_RUNNING, STATE_STOPPED)
+        return super().available and app is not None and app.state in (
+            STATE_RUNNING,
+            STATE_STOPPED,
+        )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on (start) the app."""

@@ -25,6 +25,14 @@ ports:
     protocol: tcp
     description: Mealie Web Interface
 
+# NOT INSTALLABLE AS SHIPPED. The raw-compose form has no way to take a
+# per-install value: the integration copies compose_raw verbatim and does not
+# interpolate the .env file it writes. A working database password, or the
+# public URL of an instance, therefore cannot live in this public file.
+# POSTGRES_PASSWORD is deliberately empty, so the postgres container refuses
+# to initialise; BASE_URL is omitted (Mealie then uses its own default).
+# This entry stays non-functional until the catalogue format supports
+# per-install secrets for raw-compose stacks.
 compose_raw:
   services:
     mealie:
@@ -48,10 +56,10 @@ compose_raw:
         - PUID=1000
         - PGID=1000
         - TZ=Europe/Paris
-        - BASE_URL=https://mealie.allanic.me
         - DB_ENGINE=postgres
         - POSTGRES_USER=mealie
-        - POSTGRES_PASSWORD=mealie
+        # Per-install secret: left empty on purpose (see the note at the top).
+        - POSTGRES_PASSWORD=
         - POSTGRES_SERVER=mealie-postgres
         - POSTGRES_PORT=5432
         - POSTGRES_DB=mealie
@@ -68,7 +76,8 @@ compose_raw:
       volumes:
         - /opt/nivuus/Mealie/pgdata:/var/lib/postgresql/data
       environment:
-        - POSTGRES_PASSWORD=mealie
+        # Per-install secret: left empty on purpose (see the note at the top).
+        - POSTGRES_PASSWORD=
         - POSTGRES_USER=mealie
         - POSTGRES_DB=mealie
       healthcheck:

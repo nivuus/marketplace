@@ -38,6 +38,7 @@ catalog/
 ├── catalog.yaml                        # Categories
 └── apps/*.yaml                         # One file per deployable app
 hacs.json                               # HACS installability
+nivuus-package.yaml, hooks/             # Suite package: install + activate hooks
 ```
 
 ## Critical Implementation Notes
@@ -61,13 +62,19 @@ rejected), plus `_async_unregister_services()` called from `async_unload_entry` 
 `hass.config_entries.async_loaded_entries(DOMAIN)` is empty — services are domain-wide, not
 per-entry. Verified against HA 2026.7.4.
 
-### The repository IS the deployed integration
+### Deployed as a suite package, a satellite of `home-manager`
 
-The HA stack's `docker-compose.yml` bind-mounts `custom_components/docker_marketplace` and
-`catalog/` straight into `/config/`. **Edits to this repository need only an HA restart**
-(module re-import), never a copy step. Beware: a same-named directory may exist under
-`/opt/nivuus/HomeAssistant/config/custom_components/` — it is a stale copy shadowed by the
-mount, and editing it does nothing.
+`nivuus-package.yaml` declares `requires.packages: [home-manager]`; `hooks/install.py`
+replaces `custom_components/docker_marketplace/` (built panel included) and `catalog/` under
+`/opt/nivuus/home-manager/config/` (HA's `/config`), never `stacks/` (the user's installed
+apps) nor `configuration.yaml`. It is a pure file writer, proven idempotent by the engine's
+harness in CI and at release; `hooks/activate.py` restarts a running `homeassistant`
+container so the laid version loads. Same shape as `home-stock`. There is no bind mount any
+more: an edit reaches HA through a release + `nivuus update`. `frontend/main.js` is committed
+(rebuild with `npm run build` in `frontend/`): the install hook refuses without it.
+
+The catalogue must never offer a service the foundation already runs (its broker, its Matter
+server…): `tests/test_catalogue.py` mirrors the foundation's images and published host ports.
 
 ### A stack's `config.yaml` is the only copy of the user's choices
 

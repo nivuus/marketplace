@@ -1,12 +1,20 @@
 {
   "domain": "docker_marketplace",
   "name": "Docker Marketplace",
-  "version": "1.0.0",
+  "codeowners": [
+    "@nivuus"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "frontend",
+    "http",
+    "websocket_api"
+  ],
   "documentation": "https://github.com/nivuus/marketplace",
-  "issue_tracker": "https://github.com/nivuus/marketplace/issues",
-  "dependencies": [],
-  "codeowners": ["@nivuus"],
-  "requirements": ["docker>=7.0.0", "pyyaml>=6.0"],
   "iot_class": "local_polling",
-  "config_flow": true
+  "issue_tracker": "https://github.com/nivuus/marketplace/issues",
+  "requirements": [
+    "docker==7.2.0"
+  ],
+  "version": "1.0.0"
 }

@@ -13,7 +13,14 @@ A Home Assistant custom integration that provides a marketplace for installing a
 
 ## Installation
 
-### HACS (Recommended)
+### On a Nivuus server
+
+This repository is a package of the Nivuus suite and depends on `home-manager`, whose Home
+Assistant configuration it writes into and whose Docker socket proxy it talks to. The package
+engine installs it (`nivuus check` / `nivuus update` pick up its releases); restart is handled
+by its activate hook. Then add the integration from Settings > Devices & Services.
+
+### HACS
 
 1. Open HACS in Home Assistant
 2. Click on "Integrations"
@@ -35,7 +42,7 @@ During setup, you'll need to provide:
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| Docker Host | `unix:///var/run/docker.sock` | Docker socket or TCP address |
+| Docker Host | `tcp://127.0.0.1:2375` | Docker API address: the foundation's socket proxy |
 | Catalog Path | `/config/catalog` | Path to the app catalog |
 | Stacks Path | `/config/stacks` | Where installed apps are stored |
 

@@ -10,7 +10,7 @@
           "stacks_path": "Stacks Path"
         },
         "data_description": {
-          "docker_host": "Docker socket or TCP address (e.g., unix:///var/run/docker.sock)",
+          "docker_host": "Docker socket or TCP address (e.g., tcp://127.0.0.1:2375, the socket proxy)",
           "catalog_path": "Path to the app catalog directory",
           "stacks_path": "Path where app stacks will be stored"
         }

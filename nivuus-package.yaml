@@ -1,0 +1,41 @@
+apiVersion: nivuus.dev/v1
+name: marketplace
+version: 0.0.0
+label: "Docker Marketplace (install self-hosted apps from Home Assistant)"
+tier: userspace
+
+# A satellite of home-manager, like home-stock and home-desk: the install hook
+# lays the integration and its catalogue into the Home Assistant
+# configuration directory the foundation creates. Without this line the engine
+# orders packages alphabetically and "home-manager" happens to sort after
+# "marketplace" - the satellite would write into a directory that does not
+# exist yet.
+#
+# The integration reaches Docker only through the foundation's
+# docker-socket-proxy (127.0.0.1:2375), which home-manager runs; this package
+# needs its POST permission to create, pull and remove app containers.
+requires:
+  packages: [home-manager]
+
+# Neither `apt:` nor `wizard:`, both deliberately.
+#
+# `apt:` : the only third-party Python requirement, the docker SDK, is
+# declared in custom_components/docker_marketplace/manifest.json and installed
+# by Home Assistant itself inside its container, where it runs. Nothing is
+# needed on the host.
+#
+# `wizard:` : every path comes from the foundation, and the Docker endpoint is
+# chosen in the integration's config flow (its default is the foundation's
+# socket proxy). There is nothing to ask the operator.
+#
+# `activate` restarts the `homeassistant` container when it is running
+# (hooks/activate.py): Home Assistant imports a custom integration only at
+# startup, so an update laid by `nivuus update` would otherwise keep the
+# previous version running.
+hooks:
+  install: hooks/install.py
+  activate: hooks/activate.py
+
+# Where `nivuus update` finds this package's releases.
+source:
+  github: nivuus/marketplace

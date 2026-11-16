@@ -8,6 +8,11 @@
           "docker_host": "Socket Docker",
           "catalog_path": "Chemin du catalogue",
           "stacks_path": "Chemin des stacks"
+        },
+        "data_description": {
+          "docker_host": "Socket ou adresse TCP du daemon Docker (par exemple unix:///var/run/docker.sock)",
+          "catalog_path": "Chemin du répertoire du catalogue d'applications",
+          "stacks_path": "Chemin où les stacks des applications sont enregistrées"
         }
       }
     },
@@ -78,6 +83,17 @@
       "power": {
         "name": "Alimentation"
       }
+    }
+  },
+  "exceptions": {
+    "stack_file_unreadable": {
+      "message": "Impossible de lire {path}. Rien n'a été modifié : corrigez les droits du fichier ou restaurez-le, puis réessayez."
+    },
+    "stack_file_invalid": {
+      "message": "{path} est endommagé (vide, tronqué ou YAML invalide). Rien n'a été modifié : restaurez ou réparez le fichier, puis réessayez."
+    },
+    "stack_file_unwritable": {
+      "message": "Impossible d'écrire {path}. La version précédente du fichier est conservée intacte."
     }
   }
 }

@@ -26,6 +26,7 @@ configuration, firewall zones, the HA container — stays documented there.
 custom_components/docker_marketplace/   # The HA integration
 ├── __init__.py                         # Setup, service registration
 ├── coordinator.py                      # DataUpdateCoordinator
+├── stack_files.py                      # Read/write of stack files (atomic, typed errors)
 ├── docker_client.py                    # Talks to the socket proxy
 ├── catalog.py                          # Reads catalog/apps/*.yaml
 ├── services.py                         # install/remove/update/start/stop/restart
@@ -67,6 +68,15 @@ The HA stack's `docker-compose.yml` bind-mounts `custom_components/docker_market
 (module re-import), never a copy step. Beware: a same-named directory may exist under
 `/opt/nivuus/HomeAssistant/config/custom_components/` — it is a stale copy shadowed by the
 mount, and editing it does nothing.
+
+### A stack's `config.yaml` is the only copy of the user's choices
+
+`docker-compose.yml` and `.env` are regenerated from it. Read stack files only through
+`stack_files.read_yaml_mapping` (absent → `None`; unreadable, empty or invalid → raises the
+translatable `StackFileError`, which must abort any rewrite) and write them only through
+`stack_files.write_yaml` / `write_text` (HA's `write_utf8_file_atomic`: temp file, fsync,
+rename, directory fsync, mode 0600). Never turn a read failure into `{}`: that once rebuilt an
+app's config from the single edited field and reset its ports, data paths and secrets.
 
 ### Docker access goes through the socket proxy, never the raw socket
 

@@ -22,3 +22,10 @@ pytest-homeassistant==2026.11.1
 # The integration's own runtime requirement (manifest.json), which Home
 # Assistant would install at setup time and the test harness does not.
 docker==7.2.0
+
+# manifest.json depends on `frontend` (the panel is registered through it),
+# and frontend imports hass_frontend at setup. pytest-homeassistant installs
+# Home Assistant WITHOUT per-integration requirements, so this one is listed
+# by hand: the version homeassistant/components/frontend/manifest.json pins in
+# the release above. Bump it together with pytest-homeassistant.
+home-assistant-frontend==20261028.5

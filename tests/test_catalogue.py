@@ -26,3 +26,17 @@ async def test_raw_compose_entries_ship_no_database_password() -> None:
                 name, _, value = str(item).partition("=")
                 if name == "POSTGRES_PASSWORD":
                     assert value == "", f"{app.id} ships a database password"
+
+
+async def test_a_broken_app_file_is_reported(tmp_path: Path, caplog) -> None:
+    apps = tmp_path / "apps"
+    apps.mkdir()
+    (apps / "broken.yaml").write_text("id: broken\nname: [unclosed\n")
+    (apps / "empty.yaml").write_text("")
+
+    catalog = Catalog(str(tmp_path))
+    await catalog.load()
+
+    assert catalog.apps == {}
+    assert str(apps / "broken.yaml") in caplog.text
+    assert str(apps / "empty.yaml") in caplog.text

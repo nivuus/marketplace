@@ -210,6 +210,7 @@ class Catalog:
             data = await asyncio.to_thread(self._read_yaml_file, app_file)
 
             if not data:
+                _LOGGER.error("App file %s is empty", app_file)
                 return
 
             app = self._parse_app(data)
@@ -221,12 +222,13 @@ class Catalog:
             _LOGGER.error("Error loading app file %s: %s", app_file, err)
 
     def _read_yaml_file(self, file_path: Path) -> dict[str, Any] | None:
-        """Read and parse a YAML file (blocking, run in thread)."""
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f)
-        except Exception:
-            return None
+        """Read and parse a YAML file (blocking, run in thread).
+
+        Errors propagate: the caller logs them with the file name, so a broken
+        app file is reported instead of vanishing from the catalogue unseen.
+        """
+        with open(file_path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
 
     def _parse_app(self, data: dict[str, Any]) -> AppDefinition | None:
         """Parse app data into AppDefinition."""

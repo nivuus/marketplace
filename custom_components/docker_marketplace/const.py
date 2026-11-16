@@ -11,7 +11,9 @@ CONF_CATALOG_PATH: Final = "catalog_path"
 CONF_STACKS_PATH: Final = "stacks_path"
 
 # Default values
-DEFAULT_DOCKER_HOST: Final = "unix:///var/run/docker.sock"
+# The foundation's filtered Docker API (home-manager docker-socket-proxy).
+# Home Assistant's container has no raw socket mounted.
+DEFAULT_DOCKER_HOST: Final = "tcp://127.0.0.1:2375"
 DEFAULT_CATALOG_PATH: Final = "/config/catalog"
 DEFAULT_STACKS_PATH: Final = "/config/stacks"
 DEFAULT_SCAN_INTERVAL: Final = 30  # seconds

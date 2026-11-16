@@ -10,7 +10,7 @@
           "stacks_path": "Chemin des stacks"
         },
         "data_description": {
-          "docker_host": "Socket ou adresse TCP du daemon Docker (par exemple unix:///var/run/docker.sock)",
+          "docker_host": "Socket ou adresse TCP du daemon Docker (par exemple tcp://127.0.0.1:2375, le proxy du socket)",
           "catalog_path": "Chemin du répertoire du catalogue d'applications",
           "stacks_path": "Chemin où les stacks des applications sont enregistrées"
         }

@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any
 import shutil
 
-import yaml
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -34,6 +33,7 @@ from .const import (
     UPDATE_CHECK_INTERVAL,
 )
 from .docker_client import ContainerNameConflict, ContainerStats, DockerClient
+from .stack_files import StackFileError, read_yaml_mapping, write_text, write_yaml
 from .validation import (
     InvalidAppRequest,
     require_app_id,
@@ -238,26 +238,23 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
             else:
                 state = await self.docker_client.get_container_state(container_name)
 
-            # Read compose file for image info
+            # Image and saved configuration, for display. A damaged file
+            # must not hide the other apps: it is reported (StackFileError
+            # logs it) and shown as unknown here, while every operation that
+            # would rewrite the stack from it refuses with the same error.
             image = "unknown"
-            try:
-                compose_data = await asyncio.to_thread(self._read_compose_file, compose_file)
-                if compose_data:
-                    services = compose_data.get("services", {})
-                    if services:
-                        first_service = list(services.values())[0]
-                        image = first_service.get("image", "unknown")
-            except Exception:
-                pass
-
-            # Load saved configuration
-            config_file = stack_dir / "config.yaml"
             saved_config = None
-            if config_file.exists():
-                try:
-                    saved_config = await asyncio.to_thread(self._read_config_file, config_file)
-                except Exception:
-                    pass
+            try:
+                compose_data = await asyncio.to_thread(read_yaml_mapping, compose_file)
+                services = (compose_data or {}).get("services") or {}
+                if services:
+                    first_service = list(services.values())[0]
+                    image = first_service.get("image", "unknown")
+                saved_config = await asyncio.to_thread(
+                    read_yaml_mapping, stack_dir / "config.yaml"
+                )
+            except StackFileError:
+                _LOGGER.warning("App %s has a damaged stack file, see the error above", app_id)
 
             installed[app_id] = InstalledApp(
                 app_id=app_id,
@@ -342,7 +339,7 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
 
             # Save configuration
             config_file = stack_dir / "config.yaml"
-            await asyncio.to_thread(self._write_config_file, config_file, config or {})
+            await asyncio.to_thread(write_yaml, config_file, config or {})
 
             # Generate .env file for environment variables
             env_file = stack_dir / ".env"
@@ -353,7 +350,7 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
 
             if app_def.compose_raw:
                 # Use raw compose content directly (multi-service stacks)
-                await asyncio.to_thread(self._write_compose_file, compose_file, planned)
+                await asyncio.to_thread(write_yaml, compose_file, planned)
                 _LOGGER.info("Using raw compose content for %s", app_id)
             elif app_def.compose_file:
                 # Use external compose file directly
@@ -364,11 +361,11 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
                 compose_file = external_compose
                 # Create a reference file in stack_dir
                 ref_file = stack_dir / "compose_ref.txt"
-                await asyncio.to_thread(ref_file.write_text, str(external_compose))
+                await asyncio.to_thread(write_text, ref_file, str(external_compose))
                 _LOGGER.info("Using external compose file: %s", compose_file)
             else:
                 # Generate docker-compose.yml from single-service definition
-                await asyncio.to_thread(self._write_compose_file, compose_file, planned)
+                await asyncio.to_thread(write_yaml, compose_file, planned)
 
             # Run docker compose up
             success = await self.docker_client.compose_up(
@@ -399,7 +396,7 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
             external = Path(app_def.compose_file)
             if not external.exists():
                 return {}
-            return await asyncio.to_thread(self._read_compose_file, external) or {}
+            return await asyncio.to_thread(read_yaml_mapping, external) or {}
         return self._generate_compose(app_def, config)
 
     async def remove_app(self, app_id: str, remove_data: bool = False) -> bool:
@@ -515,7 +512,7 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
             return None
 
         container_name = self._get_container_name(app_id)
-        compose_data = await asyncio.to_thread(self._read_compose_file, compose_file)
+        compose_data = await asyncio.to_thread(read_yaml_mapping, compose_file)
         services = (compose_data or {}).get("services") or {}
         declared = {
             service.get("container_name", f"{app_id}-{name}-1")
@@ -613,32 +610,6 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
             return app_id in self.data.installed_apps
         return False
 
-    def _read_compose_file(self, compose_file: Path) -> dict[str, Any] | None:
-        """Read and parse a compose file (blocking, run in thread)."""
-        try:
-            with open(compose_file, "r") as f:
-                return yaml.safe_load(f)
-        except Exception:
-            return None
-
-    def _write_compose_file(self, compose_file: Path, content: dict[str, Any]) -> None:
-        """Write a compose file (blocking, run in thread)."""
-        with open(compose_file, "w") as f:
-            yaml.dump(content, f, default_flow_style=False)
-
-    def _read_config_file(self, config_file: Path) -> dict[str, Any] | None:
-        """Read app configuration file (blocking, run in thread)."""
-        try:
-            with open(config_file, "r") as f:
-                return yaml.safe_load(f) or {}
-        except Exception:
-            return None
-
-    def _write_config_file(self, config_file: Path, config: dict[str, Any]) -> None:
-        """Write app configuration file (blocking, run in thread)."""
-        with open(config_file, "w") as f:
-            yaml.dump(config, f, default_flow_style=False)
-
     def _write_env_file(
         self, env_file: Path, app_def: AppDefinition, config: dict[str, Any]
     ) -> None:
@@ -652,8 +623,7 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
                 env_vars.append(f"{env.name}={value}")
 
         if env_vars:
-            with open(env_file, "w") as f:
-                f.write("\n".join(env_vars) + "\n")
+            write_text(env_file, "\n".join(env_vars) + "\n")
 
     async def update_config(self, app_id: str, config: dict[str, Any]) -> bool:
         """Update configuration for an installed app."""
@@ -670,41 +640,28 @@ class DockerMarketplaceCoordinator(DataUpdateCoordinator[MarketplaceData]):
 
         _LOGGER.info("Updating config for app %s", app_id)
 
-        try:
-            # Load existing config and merge with new values
-            config_file = stack_dir / "config.yaml"
-            existing_config = {}
-            if config_file.exists():
-                existing_config = await asyncio.to_thread(self._read_config_file, config_file) or {}
-
-            # Merge configs (new values override existing)
-            merged_config = {**existing_config, **config}
-
-            # Save updated config
-            await asyncio.to_thread(self._write_config_file, config_file, merged_config)
-
-            # Regenerate docker-compose.yml
-            compose_content = self._generate_compose(app_def, merged_config)
-            compose_file = stack_dir / "docker-compose.yml"
-            await asyncio.to_thread(self._write_compose_file, compose_file, compose_content)
-
-            _LOGGER.info("Config updated for app %s, restart required", app_id)
-            await self.async_refresh()
-            return True
-
-        except Exception as err:
-            _LOGGER.error("Error updating config for %s: %s", app_id, err)
-            return False
-
-    async def get_app_config(self, app_id: str) -> dict[str, Any] | None:
-        """Get current configuration for an installed app."""
-        stack_dir = self._stack_dir(app_id)
+        # The saved config is the only copy of every value the request does not
+        # carry: absent means nothing was saved yet, but a file that cannot be
+        # read raises StackFileError here, before anything is rewritten.
         config_file = stack_dir / "config.yaml"
+        existing_config = await asyncio.to_thread(read_yaml_mapping, config_file)
+        merged_config = {**(existing_config or {}), **config}
 
-        if not config_file.exists():
-            return {}
+        # Everything is computed before the first write. Each write replaces
+        # its file whole; one that fails raises StackFileError, never success.
+        compose_content = self._generate_compose(app_def, merged_config)
+        await asyncio.to_thread(write_yaml, config_file, merged_config)
+        await asyncio.to_thread(write_yaml, stack_dir / "docker-compose.yml", compose_content)
 
-        try:
-            return await asyncio.to_thread(self._read_config_file, config_file)
-        except Exception:
-            return None
+        _LOGGER.info("Config updated for app %s, restart required", app_id)
+        await self.async_refresh()
+        return True
+
+    async def get_app_config(self, app_id: str) -> dict[str, Any]:
+        """Get the saved configuration of an app ({} when none was saved).
+
+        Raises StackFileError when config.yaml exists but cannot be read: the
+        form must not present the defaults as the app's configuration.
+        """
+        config_file = self._stack_dir(app_id) / "config.yaml"
+        return await asyncio.to_thread(read_yaml_mapping, config_file) or {}

@@ -84,5 +84,16 @@
       "name": "Restart App",
       "description": "Restart a running app"
     }
+  },
+  "exceptions": {
+    "stack_file_unreadable": {
+      "message": "Cannot read {path}. Nothing was changed: fix the file's permissions, or restore it, then try again."
+    },
+    "stack_file_invalid": {
+      "message": "{path} is damaged (empty, cut short or not valid YAML). Nothing was changed: restore or repair the file, then try again."
+    },
+    "stack_file_unwritable": {
+      "message": "Cannot write {path}. The previous version of the file is kept intact."
+    }
   }
 }

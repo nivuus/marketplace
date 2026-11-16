@@ -78,7 +78,7 @@ and container lifecycle actions must go through compose, not the Docker API.
 
 ## Code Style Guidelines
 
-- **File Organization**: Maximum 200 lines per file — split if larger
+- **File Organization**: Maximum 500 lines per file (suite rule, enforced by CI) — split along a real seam if larger
 - **Architecture**: Use classes and inheritance extensively
 - **Modularity**: Each file should be self-contained and minimal
 - **Comments**: English only
